@@ -16,9 +16,7 @@
 name: Build PR
 
 on:
-  pull_request:
-    branches: [ "4.2"]
-
+  
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
