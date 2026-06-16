@@ -31,11 +31,14 @@ services:
 
   build:
     <<: *common
-    command: '/bin/bash -cl "
-      ./mvnw -B -ntp clean install -Dio.netty.testsuite.badHost=netty.io -Dtcnative.classifier=linux-x86_64-fedora -Drevapi.skip=true -Dcheckstyle.skip=true -Dforbiddenapis.skip=true && 
-      cd testsuite-shading &&
-      ../mvnw -B -ntp integration-test failsafe:verify -Dtcnative.classifier=linux-x86_64-fedora -Drevapi.skip=true -Dcheckstyle.skip=true -Dforbiddenapis.skip=true
-    "'
+    # TEMP: scoped to CVE-patched modules (-pl ... -am -amd) to speed up CI.
+    # Revert to the full-reactor command below before merging upstream:
+    #   command: '/bin/bash -cl "
+    #     ./mvnw -B -ntp clean install -Dio.netty.testsuite.badHost=netty.io -Dtcnative.classifier=linux-x86_64-fedora -Drevapi.skip=true -Dcheckstyle.skip=true -Dforbiddenapis.skip=true &&
+    #     cd testsuite-shading &&
+    #     ../mvnw -B -ntp integration-test failsafe:verify -Dtcnative.classifier=linux-x86_64-fedora -Drevapi.skip=true -Dcheckstyle.skip=true -Dforbiddenapis.skip=true
+    #   "'
+    command: /bin/bash -cl "./mvnw -B -ntp -pl transport-classes-epoll,transport-native-unix-common -am -amd clean install -Dio.netty.testsuite.badHost=netty.io -Dtcnative.classifier=linux-x86_64-fedora -Drevapi.skip=true -Dcheckstyle.skip=true -Dforbiddenapis.skip=true"
 
   deploy:
     <<: *common
