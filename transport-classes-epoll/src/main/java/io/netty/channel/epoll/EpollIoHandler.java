@@ -252,6 +252,12 @@ public class EpollIoHandler implements IoHandler {
                 if (!isValid()) {
                     return -1;
                 }
+                if (epollIoOps.value == EpollIoOps.NONE.value) {
+                    // 0 means there is nothing to handle anymore, unregister the fd as otherwise
+                    // we might get notified forever because of EPOLLHUP / EPOLLERR.
+                    Native.epollCtlDel(epollFd.intValue(), handle.fd().intValue());
+                    return 0;
+                }
                 Native.epollCtlMod(epollFd.intValue(), handle.fd().intValue(), epollIoOps.value);
                 return epollIoOps.value;
             } catch (IOException e) {
