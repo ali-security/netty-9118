@@ -232,6 +232,10 @@ public class EpollIoHandler implements IoHandler {
     private final class DefaultEpollIoRegistration implements IoRegistration {
         private final ThreadAwareExecutor executor;
         private final AtomicBoolean canceled = new AtomicBoolean();
+        // register() performs the initial epollCtlAdd, so the fd starts out registered.
+        // Flips to false when submit(NONE) unregisters via epollCtlDel; the next non-NONE
+        // submit then re-ADDs instead of MOD'ing an absent fd (which would fail with ENOENT).
+        private boolean added = true;
         final EpollIoHandle handle;
 
         DefaultEpollIoRegistration(ThreadAwareExecutor executor, EpollIoHandle handle) {
@@ -249,11 +253,29 @@ public class EpollIoHandler implements IoHandler {
         public long submit(IoOps ops) {
             EpollIoOps epollIoOps = cast(ops);
             try {
-                if (!isValid()) {
-                    return -1;
+                synchronized (this) {
+                    if (!isValid()) {
+                        return -1;
+                    }
+                    int efd = epollFd.intValue();
+                    int fd = handle.fd().intValue();
+                    if (epollIoOps.value == EpollIoOps.NONE.value) {
+                        if (added) {
+                            // 0 means there is nothing to handle anymore, unregister the fd as otherwise
+                            // we might get notified forever because of EPOLLHUP / EPOLLERR.
+                            Native.epollCtlDel(efd, fd);
+                            added = false;
+                        }
+                        return 0;
+                    }
+                    if (added) {
+                        Native.epollCtlMod(efd, fd, epollIoOps.value);
+                    } else {
+                        Native.epollCtlAdd(efd, fd, epollIoOps.value);
+                        added = true;
+                    }
+                    return epollIoOps.value;
                 }
-                Native.epollCtlMod(epollFd.intValue(), handle.fd().intValue(), epollIoOps.value);
-                return epollIoOps.value;
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -288,7 +310,12 @@ public class EpollIoHandler implements IoHandler {
                 } else if (old.handle instanceof AbstractEpollChannel.AbstractEpollUnsafe) {
                     numChannels--;
                 }
-                if (handle.fd().isOpen()) {
+                boolean stillAdded;
+                synchronized (this) {
+                    stillAdded = added;
+                    added = false;
+                }
+                if (stillAdded && handle.fd().isOpen()) {
                     try {
                         // Remove the fd registration from epoll. This is only needed if it's still open as otherwise
                         // it will be automatically removed once the file-descriptor is closed.
